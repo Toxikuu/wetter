@@ -13,7 +13,6 @@ use flume::{Sender, Receiver};
 use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 use xz2::read::XzDecoder;
-use std::error::Error;
 
 fn check_perms() {
     unsafe {
@@ -29,11 +28,10 @@ fn detect_filetype<R: Read>(reader: &mut R) -> Result<&'static str, io::Error> {
     reader.read_exact(&mut buffer)?;
 
     match buffer {
-        [0x1F, 0x8B, 0x08, ..] => Ok("gz"),
-        [b'B', b'Z', b'h', ..] => Ok("bz2"),
+        [0x1F, 0x8B, 0x08, ..]               => Ok("gz"),
+        [b'B', b'Z', b'h', ..]               => Ok("bz2"),
         [0xFD, b'7', b'z', b'X', b'Z', 0x00] => Ok("xz"),
-        [b'u', b's', ..] => Ok("tar"),
-        [0x1F, 0x9D, 0x00, 0x00, ..] => Ok("z"),
+        [b'u', b's', ..]                     => Ok("tar"),
         _ => Err(io::Error::new(io::ErrorKind::InvalidData, "Unknown file type")),
     }
 }
@@ -79,22 +77,19 @@ fn extract_tar(file_path: &Path) -> Result<String, Box<dyn std::error::Error>> {
     let filetype = detect_filetype(&mut reader)?;
     println!("Detected filetype: {}", filetype);
 
-    reader.seek(io::SeekFrom::Start(0))?; // fixed the xz shit
+    reader.seek(io::SeekFrom::Start(0))?; // fixes the xz shit
 
     let archive_reader: Box<dyn Read> = match filetype {
-        "tar" => Box::new(reader),
         "gz"  => Box::new(GzDecoder::new(reader)),
         "bz2" => Box::new(BzDecoder::new(reader)),
         "xz"  => Box::new(XzDecoder::new(reader)),
+        "tar" => Box::new(reader),
         _ => return Err("Unsupported file format".into()), // should never happen
     };
 
     let mut archive = Archive::new(archive_reader);
     let extract_dir = Path::new("/tmp/wet");
     archive.unpack(extract_dir).map_err(|e| format!("Failed to unpack archive: {}", e))?;
-
-    let entries: Vec<_> = fs::read_dir(extract_dir)?.collect();
-    println!("Contents of extract dir: {:?}", entries);
 
     let srcdir = fs::read_dir(extract_dir)?
         .filter_map(Result::ok)
